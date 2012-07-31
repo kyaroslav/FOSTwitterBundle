@@ -9,7 +9,11 @@
             <argument type="service" id="fos_twitter.service"/>
             <argument type="service" id="service_container"/>
         </service>
-        
+
+        <service id="fos_twitter.logout_handler" class="FOS\TwitterBundle\Security\Logout\TwitterHandler" public="false">
+            <argument type="service" id="fos_twitter.api" />
+        </service>
+
         <service id="fos_twitter.anywhere_auth" class="FOS\TwitterBundle\Security\Authentication\Provider\TwitterAnywhereProvider" public="false">
             <argument>%fos_twitter.consumer_secret%</argument>
         </service>
