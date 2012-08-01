@@ -43,7 +43,7 @@ class TwitterAuthenticationEntryPoint implements AuthenticationEntryPointInterfa
      */
     public function start(Request $request, AuthenticationException $authException = null)
     {
-        $authURL = $this->twitter->getLoginUrl($request);
+        $authURL = $this->twitter->getLoginUrl();
         if (!$authURL) {
             throw new ConnectionException('Could not connect to Twitter!');
         }

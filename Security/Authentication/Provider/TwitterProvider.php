@@ -11,6 +11,9 @@
 
 namespace FOS\TwitterBundle\Security\Authentication\Provider;
 
+use Symfony\Component\Security\Core\Authentication\Token\UsernamePasswordToken;
+use Symfony\Component\Security\Core\Exception\UsernameNotFoundException;
+use FOS\TwitterBundle\Security\User\UserManagerInterface;
 use Symfony\Component\Security\Core\User\UserInterface;
 use Symfony\Component\Security\Core\User\UserCheckerInterface;
 use Symfony\Component\Security\Core\User\UserProviderInterface;
@@ -25,21 +28,25 @@ use FOS\TwitterBundle\Services\Twitter;
 
 class TwitterProvider implements AuthenticationProviderInterface
 {
-    protected $twitter;
-    protected $accessToken;
-    protected $userProvider;
-    protected $userChecker;
-    protected $container;
+    private $twitter;
+    private $userProvider;
+    private $userChecker;
+    private $createUserIfNotExists;
 
-    public function __construct(Twitter $twitter, Container $container, UserProviderInterface $userProvider = null, UserCheckerInterface $userChecker = null)
+    public function __construct(Twitter $twitter, UserProviderInterface $userProvider = null, UserCheckerInterface $userChecker = null, $createUserIfNotExists = false)
     {
         if (null !== $userProvider && null === $userChecker) {
             throw new \InvalidArgumentException('$userChecker cannot be null, if $userProvider is not null.');
         }
+
+        if ($createUserIfNotExists && !$userProvider instanceof UserManagerInterface) {
+            throw new \InvalidArgumentException('$userProvider must be an instanceof UserManagerInterface if createUserIfNotExists is true.');
+        }
+
         $this->twitter = $twitter;
         $this->userProvider = $userProvider;
         $this->userChecker = $userChecker;
-        $this->container = $container;
+        $this->createUserIfNotExists = $createUserIfNotExists;
     }
 
     public function authenticate(TokenInterface $token)
@@ -48,14 +55,26 @@ class TwitterProvider implements AuthenticationProviderInterface
             return null;
         }
 
+        $user = $token->getUser();
+        if ($user instanceof UserInterface) {
+            // FIXME: Should we make a call to Twitter for verification?
+            $newToken = new TwitterUserToken($user, null, $user->getRoles());
+            $newToken->setAttributes($token->getAttributes());
+
+            return $newToken;
+        }
+
         try {
-            if ($this->accessToken = $this->twitter->getAccessToken($this->container->get('request'))) {
-                return $this->createAuthenticatedToken($this->accessToken['user_id']);
+            if ($accessToken = $this->twitter->getAccessToken($token->getUser(), $token->getOauthVerifier())) {
+                $newToken = $this->createAuthenticatedToken($accessToken);
+                $newToken->setAttributes($token->getAttributes());
+
+                return $newToken;
             }
         } catch (AuthenticationException $failed) {
             throw $failed;
         } catch (\Exception $failed) {
-            throw new AuthenticationException('Unknown error', $failed->getMessage(), $failed->getCode(), $failed);
+            throw new AuthenticationException($failed->getMessage(), null, $failed->getCode(), $failed);
         }
 
         throw new AuthenticationException('The Twitter user could not be retrieved from the session.');
@@ -66,20 +85,27 @@ class TwitterProvider implements AuthenticationProviderInterface
         return $token instanceof TwitterUserToken;
     }
 
-    protected function createAuthenticatedToken($uid)
+    private function createAuthenticatedToken(array $accessToken)
     {
         if (null === $this->userProvider) {
-            return new TwitterUserToken($uid);
+            return new TwitterUserToken($accessToken['screen_name'], null, array('ROLE_TWITTER_USER'));
         }
 
-        $user = $this->userProvider->loadUserByUsername($uid);
+        try {
+            $user = $this->userProvider->loadUserByUsername($accessToken['screen_name']);
+            $this->userChecker->checkPostAuth($user);
+        } catch (UsernameNotFoundException $ex) {
+            if (!$this->createUserIfNotExists) {
+                throw $ex;
+            }
+
+            $user = $this->userProvider->createUserFromAccessToken($accessToken);
+        }
+
         if (!$user instanceof UserInterface) {
             throw new \RuntimeException('User provider did not return an implementation of user interface.');
         }
 
-        $this->userChecker->checkPreAuth($user);
-        $this->userChecker->checkPostAuth($user);
-
-        return new TwitterUserToken($user, $user->getRoles());
+        return new TwitterUserToken($user, null, $user->getRoles());
     }
 }

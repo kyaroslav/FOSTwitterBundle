@@ -22,9 +22,16 @@ use Symfony\Component\HttpFoundation\Request;
  */
 class TwitterListener extends AbstractAuthenticationListener
 {
+    private $useTwitterAnywhere = false;
+
+    public function setUseTwitterAnywhere($bool)
+    {
+        $this->useTwitterAnywhere = (Boolean) $bool;
+    }
+
     protected function attemptAuthentication(Request $request)
     {
-        if (true === $this->options['use_twitter_anywhere']) {
+        if ($this->useTwitterAnywhere) {
             if (null === $identity = $request->cookies->get('twitter_anywhere_identity')) {
                 throw new AuthenticationException(sprintf('Identity cookie "twitter_anywhere_identity" was not sent.'));
             }
@@ -33,8 +40,8 @@ class TwitterListener extends AbstractAuthenticationListener
             }
 
             return $this->authenticationManager->authenticate(TwitterAnywhereToken::createUnauthenticated(substr($identity, 0, $pos), substr($identity, $pos + 1)));
-        } else {
-            return $this->authenticationManager->authenticate(new TwitterUserToken());
         }
+
+        return $this->authenticationManager->authenticate(new TwitterUserToken($request->query->get('oauth_token'), $request->query->get('oauth_verifier')));
     }
 }

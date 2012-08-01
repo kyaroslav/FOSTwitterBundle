@@ -21,6 +21,7 @@ class TwitterFactory extends AbstractFactory
     public function __construct()
     {
         $this->addOption('use_twitter_anywhere', false);
+        $this->addOption('create_user_if_not_exists', false);
     }
 
     public function getPosition()
@@ -49,6 +50,7 @@ class TwitterFactory extends AbstractFactory
                     ->setDefinition($authProviderId, new DefinitionDecorator('fos_twitter.anywhere_auth'))
                     ->addArgument(new Reference($userProviderId))
                     ->addArgument(new Reference('security.user_checker'))
+                    ->addArgument($config['create_user_if_not_exists'])
                 ;
 
                 return $authProviderId;
@@ -67,6 +69,7 @@ class TwitterFactory extends AbstractFactory
                 ->setDefinition($authProviderId, new DefinitionDecorator('fos_twitter.auth'))
                 ->addArgument(new Reference($userProviderId))
                 ->addArgument(new Reference('security.user_checker'))
+                ->addArgument($config['create_user_if_not_exists'])
             ;
 
             return $authProviderId;
@@ -74,6 +77,20 @@ class TwitterFactory extends AbstractFactory
 
         // without user provider
         return 'fos_twitter.auth';
+    }
+
+    protected function createListener($container, $id, $config, $userProvider)
+    {
+        $listenerId = parent::createListener($container, $id, $config, $userProvider);
+
+        if ($config['use_twitter_anywhere']) {
+            $container
+                ->getDefinition($listenerId)
+                ->addMethodCall('setUseTwitterAnywhere', array(true))
+            ;
+        }
+
+        return $listenerId;
     }
 
     protected function createEntryPoint($container, $id, $config, $defaultEntryPointId)
